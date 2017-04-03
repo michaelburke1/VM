@@ -15,9 +15,18 @@ how to use the page table and disk interfaces.
 #include <string.h>
 #include <errno.h>
 
+struct table {
+    int size;
+    int elements[];
+
+};
+
+struct table *frameTable;
+
 void page_fault_handler( struct page_table *pt, int page )
 {
-	printf("page fault on page #%d\n",page);
+	
+    printf("page fault on page #%d\n",page);
 	exit(1);
 }
 
@@ -31,6 +40,9 @@ int main( int argc, char *argv[] )
 	int npages = atoi(argv[1]);
 	int nframes = atoi(argv[2]);
 	const char *program = argv[4];
+
+    frameTable = malloc(sizeof(struct table) + nframes * sizeof(int));
+
 
 	struct disk *disk = disk_open("myvirtualdisk",npages);
 	if(!disk) {
@@ -65,6 +77,9 @@ int main( int argc, char *argv[] )
 
 	page_table_delete(pt);
 	disk_close(disk);
+    free(frameTable);
 
 	return 0;
+
+
 }
