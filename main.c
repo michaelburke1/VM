@@ -7,6 +7,7 @@ how to use the page table and disk interfaces.
 */
 
 #include "page_table.h"
+#include "page_table.c"
 #include "disk.h"
 #include "program.h"
 
@@ -17,15 +18,29 @@ how to use the page table and disk interfaces.
 
 struct table {
     int size;
+    int currFree;
     int elements[];
-
 };
 
 struct table *frameTable;
 
 void page_fault_handler( struct page_table *pt, int page )
 {
-	
+    if (frameTable->currFree < frameTable->size - 1)
+    {
+        //load in
+        page_table_set_entry(pt, page, frameTable->currFree, PROT_READ);
+        disk_read(pt->fd, 2, pt->physmem[frameTable->currFree * (pt->nframes)]);
+        frameTable->currFree++;
+    }
+    else
+    {
+        //free then load in
+        page_table_set_entry(pt, page, frameTable->currFree, PROT_WRITE);
+        disk_read(pt->fd, 2, pt->physmem[frameTable->currFree * (pt->nframes)]);
+
+    }
+
     printf("page fault on page #%d\n",page);
 	exit(1);
 }
@@ -42,7 +57,8 @@ int main( int argc, char *argv[] )
 	const char *program = argv[4];
 
     frameTable = malloc(sizeof(struct table) + nframes * sizeof(int));
-
+    frameTable->currFree = 0;
+    frameTable->size = nframes;
 
 	struct disk *disk = disk_open("myvirtualdisk",npages);
 	if(!disk) {
