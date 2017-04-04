@@ -30,14 +30,20 @@ void page_fault_handler( struct page_table *pt, int page )
     {
         //load in
         page_table_set_entry(pt, page, frameTable->currFree, PROT_READ);
-        disk_read(pt->fd, 2, pt->physmem[frameTable->currFree * (pt->nframes)]);
+        disk_read(pt->fd, page, pt->physmem[frameTable->currFree * (pt->nframes)]);
         frameTable->currFree++;
     }
     else
     {
         //free then load in
-        page_table_set_entry(pt, page, frameTable->currFree, PROT_WRITE);
-        disk_read(pt->fd, 2, pt->physmem[frameTable->currFree * (pt->nframes)]);
+
+        //writing
+        page_table_set_entry(pt, page, frameTable->currFree, PROT_READ|PROT_WRITE);
+        disk_read(pt->fd, page, pt->physmem[frameTable->currFree * (pt->nframes)]);
+
+        //freeing
+        //x = randNum to free
+        disk_write(pt->fd, page, pt->physmem[0 * PAGE_SIZE]);
 
     }
 
