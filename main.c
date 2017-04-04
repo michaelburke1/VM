@@ -7,7 +7,6 @@
    */
 
 #include "page_table.h"
-//#include "page_table.c"
 #include "disk.h"
 #include "program.h"
 
@@ -31,10 +30,13 @@ void page_fault_handler( struct page_table *pt, int page )
     printf("curr %d size %d", frameTable->currFree, frameTable->size);
     int frame;
     int bits;
-    page_table_get_entry(pt, page, &frame, &bits);    
+    page_table_get_entry(pt, page, &frame, &bits);
 
-    if (bits == 0)
+    if (bits == 0) //we need to set PROT_READ
     {
+        char *phys = page_table_get_physmem(pt);
+        int nframes = page_table_get_nframes(pt);
+
         if (frameTable->currFree <= frameTable->size - 1)
         {
             printf("in if\n");
@@ -42,28 +44,34 @@ void page_fault_handler( struct page_table *pt, int page )
             //load in
             page_table_set_entry(pt, page, frameTable->currFree, PROT_READ);
 
-            char *phys = page_table_get_physmem(pt);
-            int nframes = page_table_get_nframes(pt);
-            //        disk_read(gDisk, page, &phys[frameTable->currFree * nframes]);
-            //disk_read(pt->fd, page, pt->physmem[frameTable->currFree * (pt->nframes)]);
+            /* char *phys = page_table_get_physmem(pt); */
+            /* int nframes = page_table_get_nframes(pt); */
+            //disk read happens
+            disk_read(gDisk, page, &phys[frame * nframes]);
+            //
             frameTable->currFree++;
         }
+        else //physical memory is full and we need to free something
+        {
+            int randFrame = rand() % nframes;
+            //chosenPage = algorithm();
+
+            disk_write(gDisk, randFrame, &phys[randFrame * nframes]);
+            disk_read(gDisk, page, &phys[randFrame * nframes]);
+            page_table_set_entry(pt, page, randFrame, PROT_READ);
+            page_table_set_entry(pt, randPage, 0, 0);
+        }
     }
-    else
+    else //PROT_READ is set now set PROT_WRITE
     {
         //free then load in
 
         //writing
         page_table_set_entry(pt, page, frame, PROT_READ|PROT_WRITE);
 
-        char *phys = page_table_get_physmem(pt);
-        int nframes = page_table_get_nframes(pt);
-        disk_read(gDisk, page, &phys[frame * nframes]);
-
-        //freeing
-        //x = randNum to free
-        //   disk_write(gDisk, page, &phys[0 * PAGE_SIZE]);
-        //disk_write(pt->fd, page, pt->physmem[0 * PAGE_SIZE]);
+        /* char *phys = page_table_get_physmem(pt); */
+        /* int nframes = page_table_get_nframes(pt); */
+        /* disk_read(gDisk, page, &phys[frame * nframes]); */
 
     }
 
