@@ -54,12 +54,17 @@ void page_fault_handler( struct page_table *pt, int page )
         else //physical memory is full and we need to free something
         {
             int randFrame = rand() % nframes;
+            int removePage = frameTable->elements[randFrame];
+            
+            int removeFrame;
+            int removeBits;
+            page_table_get_entry(pt, removePage, &removeFrame, &removeBits);
             //chosenPage = algorithm();
 
-            disk_write(gDisk, randFrame, &phys[randFrame * nframes]);
-            disk_read(gDisk, page, &phys[randFrame * nframes]);
-            page_table_set_entry(pt, page, randFrame, PROT_READ);
-            page_table_set_entry(pt, randPage, 0, 0);
+            disk_write(gDisk, removePage, &phys[removeFrame * nframes]);
+            disk_read(gDisk, page, &phys[removeFrame * nframes]);
+            page_table_set_entry(pt, page, removeFrame, PROT_READ);
+            page_table_set_entry(pt, removePage, 0, 0);
         }
     }
     else //PROT_READ is set now set PROT_WRITE
