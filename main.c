@@ -16,17 +16,19 @@
 #include <errno.h>
 
 struct table {
-    char method[25];
+    char *method;
     int size;
     int currFree;
+    int oldest;
     int elements[];
 };
-
+int faults = 0;
 struct table *frameTable;
 struct disk *gDisk;
 
 void page_fault_handler( struct page_table *pt, int page )
 {
+    faults++;
     //printf("curr %d size %d", frameTable->currFree, frameTable->size);
     printf("-------\n");
     int frame;
@@ -48,7 +50,7 @@ void page_fault_handler( struct page_table *pt, int page )
             /* char *phys = page_table_get_physmem(pt); */
             /* int nframes = page_table_get_nframes(pt); */
             //disk read happens
-            disk_read(gDisk, page, &phys[frameTable->currFree * 1]);
+            disk_read(gDisk, page, &phys[frameTable->currFree * PAGE_SIZE]);
 
             frameTable->elements[frameTable->currFree] = page;
             //
@@ -56,21 +58,41 @@ void page_fault_handler( struct page_table *pt, int page )
         }
         else //physical memory is full and we need to free something
         {
-            int randFrame = rand() % nframes;
-            int removePage = frameTable->elements[randFrame];
+            int randFrame, removePage, removeFrame, removeBits;
+            if (!strcmp(frameTable->method, "rand")) 
+            {
+                printf("rand\n");
+                randFrame = rand() % nframes;
+            } 
+            else if (!strcmp(frameTable->method, "fifo")) 
+            {
+                printf("fifo!\n");
+                randFrame = frameTable->oldest;
+                frameTable->oldest = (frameTable->oldest + 1) % nframes;
+            }
+            else if (!strcmp(frameTable->method, "custom"))
+            {
+                randFrame = frameTable->currFree - 1;
+            }
+            else
+            {
+                printf("method is strange. Exiting\n");
+                exit(1);
+            }
+                removePage = frameTable->elements[randFrame];
 
-            int removeFrame;
-            int removeBits;
-            page_table_get_entry(pt, removePage, &removeFrame, &removeBits);
-            //chosenPage = algorithm();
-
+                //removeFrame;
+                //removeBits;
+                page_table_get_entry(pt, removePage, &removeFrame, &removeBits);
+                //chosenPage = algorithm();
+            
             int i = 0;
             for (; i < nframes; i++)
                 if (frameTable->elements[i] == removePage)
                     frameTable->elements[i] = page;
 
-            disk_write(gDisk, removePage, &phys[removeFrame * 1]);
-            disk_read(gDisk, page, &phys[removeFrame * 1]);
+            disk_write(gDisk, removePage, &phys[removeFrame * PAGE_SIZE]);
+            disk_read(gDisk, page, &phys[removeFrame * PAGE_SIZE]);
             page_table_set_entry(pt, page, removeFrame, PROT_READ);
             page_table_set_entry(pt, removePage, 0, 0);
         }
@@ -109,7 +131,11 @@ int main( int argc, char *argv[] )
 
     frameTable = malloc(sizeof(struct table) + nframes * sizeof(int));
     frameTable->currFree = 0;
+    frameTable->oldest = 0;
     frameTable->size = nframes;
+    frameTable->method = argv[3];
+
+    printf("%s\n", frameTable->method);
 
     struct disk *disk = disk_open("myvirtualdisk",npages);
     gDisk = disk;
@@ -146,6 +172,6 @@ int main( int argc, char *argv[] )
     page_table_delete(pt);
     disk_close(disk);
     free(frameTable);
-
+    printf("\n%d\n", faults);
     return 0;
 }
