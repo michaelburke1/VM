@@ -5,11 +5,11 @@
    The header files page_table.h and disk.h explain
    how to use the page table and disk interfaces.
    */
-
+#include <time.h>
 #include "page_table.h"
 #include "disk.h"
 #include "program.h"
-
+#include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +23,7 @@ struct table {
     int elements[];
 };
 int faults = 0;
-struct table *frameTable;
+struct table *frameTable, *accessTable;
 struct disk *gDisk;
 
 void page_fault_handler( struct page_table *pt, int page )
@@ -46,7 +46,9 @@ void page_fault_handler( struct page_table *pt, int page )
             //printf("page %d, currFree %d\n", page, frameTable->currFree);
             //load in
             page_table_set_entry(pt, page, frameTable->currFree, PROT_READ);
-
+            struct timeval tv;
+            gettimeofday(&tv,NULL);
+            accessTable->elements[page] = tv.tv_usec;
             /* char *phys = page_table_get_physmem(pt); */
             /* int nframes = page_table_get_nframes(pt); */
             //disk read happens
@@ -63,29 +65,40 @@ void page_fault_handler( struct page_table *pt, int page )
             {
                 printf("rand\n");
                 randFrame = rand() % nframes;
+                removePage = frameTable->elements[randFrame];
             } 
             else if (!strcmp(frameTable->method, "fifo")) 
             {
                 printf("fifo!\n");
                 randFrame = frameTable->oldest;
                 frameTable->oldest = (frameTable->oldest + 1) % nframes;
+                removePage = frameTable->elements[randFrame];
             }
             else if (!strcmp(frameTable->method, "custom"))
             {
-                randFrame = frameTable->currFree - 1;
+                //randFrame = frameTable->currFree - 1;
+                int i = 0, min = time(NULL);
+                for (; i < page_table_get_npages(pt); i++) 
+                {
+                    if (accessTable->elements[i] < min && accessTable->elements[i] > 0)
+                    {
+                        min = accessTable->elements[i];
+                        removePage = i;
+                    }
+                }
             }
             else
             {
                 printf("method is strange. Exiting\n");
                 exit(1);
             }
-                removePage = frameTable->elements[randFrame];
+            //   removePage = frameTable->elements[randFrame];
 
-                //removeFrame;
-                //removeBits;
-                page_table_get_entry(pt, removePage, &removeFrame, &removeBits);
-                //chosenPage = algorithm();
-            
+            //removeFrame;
+            //removeBits;
+            page_table_get_entry(pt, removePage, &removeFrame, &removeBits);
+            //chosenPage = algorithm();
+
             int i = 0;
             for (; i < nframes; i++)
                 if (frameTable->elements[i] == removePage)
@@ -94,21 +107,35 @@ void page_fault_handler( struct page_table *pt, int page )
             disk_write(gDisk, removePage, &phys[removeFrame * PAGE_SIZE]);
             disk_read(gDisk, page, &phys[removeFrame * PAGE_SIZE]);
             page_table_set_entry(pt, page, removeFrame, PROT_READ);
+            struct timeval tv;
+            gettimeofday(&tv,NULL);
+            accessTable->elements[page] = tv.tv_usec;
+             //(int)time(NULL);
             page_table_set_entry(pt, removePage, 0, 0);
+            accessTable->elements[removePage] = 0;
         }
     }
     else //PROT_READ is set now set PROT_WRITE
     {
         page_table_set_entry(pt, page, frame, PROT_READ|PROT_WRITE);
-
+        struct timeval tv;
+        gettimeofday(&tv,NULL);
+        accessTable->elements[page] = tv.tv_usec;
+        //accessTable->elements[page] = (int)time(NULL);
         /* char *phys = page_table_get_physmem(pt); */
         /* int nframes = page_table_get_nframes(pt); */
         /* disk_read(gDisk, page, &phys[frame * nframes]); */
 
     }
 
-    printf("pages in mem are: \n");
     int i = 0;
+    for (; i < page_table_get_npages(pt); i++) 
+    {
+        printf("%d\n", accessTable->elements[i]);
+    }
+
+    printf("pages in mem are: \n");
+    i = 0;
     int nframes = page_table_get_nframes(pt);
     for (; i < nframes; i++)
         printf("%d - ", frameTable->elements[i]);
@@ -130,6 +157,12 @@ int main( int argc, char *argv[] )
     const char *program = argv[4];
 
     frameTable = malloc(sizeof(struct table) + nframes * sizeof(int));
+    accessTable = malloc(sizeof(struct table) + npages * sizeof(int));
+
+    int i = 0;
+    for (; i < npages; i++)
+        accessTable->elements[i] = 0;
+
     frameTable->currFree = 0;
     frameTable->oldest = 0;
     frameTable->size = nframes;
