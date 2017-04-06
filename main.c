@@ -47,30 +47,27 @@ void page_fault_handler( struct page_table *pt, int page )
     int bits;
     page_table_get_entry(pt, page, &frame, &bits);
 
-    if (bits == 0) //we need to set PROT_READ
+    if (bits == 0) //we need to set PROT_READ -> the page is not in the frame table
     {
         char *phys = page_table_get_physmem(pt);
         int nframes = page_table_get_nframes(pt);
 
-        if (frameTable->currFree <= frameTable->size - 1)
-        {
-            //printf("in if\n");
-            //printf("page %d, currFree %d\n", page, frameTable->currFree);
+        if (frameTable->currFree <= frameTable->size - 1) //this runs as long as we have empty frames we can fill
+        {                                                 //it's linear which makes the beginning slightly more efficient
+                                                          //e.g. we don't have to search for free frames, we know exactly where it is
             //load in
             page_table_set_entry(pt, page, frameTable->currFree, PROT_READ);
             struct timeval tv;
             gettimeofday(&tv,NULL);
             accessTable->elements[page] = tv;
             frameTable->lastUsed = page;
-            /* char *phys = page_table_get_physmem(pt); */
-            /* int nframes = page_table_get_nframes(pt); */
-            //disk read happens
+
             disk_read(gDisk, page, &phys[frameTable->currFree * PAGE_SIZE]);
             reads++;
 
             frameTable->elements[frameTable->currFree] = page;
-            //
-            frameTable->currFree++;
+
+            frameTable->currFree++; //this keeps track of where our first available empty frame is
         }
         else //physical memory is full and we need to free something
         {
@@ -78,33 +75,32 @@ void page_fault_handler( struct page_table *pt, int page )
             if (!strcmp(frameTable->method, "rand"))
             {
                 /* printf("rand\n"); */
-                randFrame = rand() % nframes;
-                removePage = frameTable->elements[randFrame];
+                randFrame = rand() % nframes; //randomly get and index of the frames
+                removePage = frameTable->elements[randFrame]; //get the page at that index for removal
             }
             else if (!strcmp(frameTable->method, "fifo"))
             {
                 /* printf("fifo!\n"); */
                 randFrame = frameTable->oldest;
-                frameTable->oldest = (frameTable->oldest + 1) % nframes;
+                frameTable->oldest = (frameTable->oldest + 1) % nframes; //because we insert and replace pages linearly this works for fifo
                 removePage = frameTable->elements[randFrame];
             }
             else if (!strcmp(frameTable->method, "custom"))
             {
-                randFrame = frameTable->currFree - 1;
                 struct timeval tv;
                 gettimeofday(&tv,NULL);
 
                 int i = 0;
                 struct timeval min = tv;
                 min.tv_sec = INT_MAX;
-                for (; i < page_table_get_npages(pt); i++)
+                for (; i < page_table_get_npages(pt); i++) //this for loop finds the timestamp that was longest ago
                 {
                     if (accessTable->elements[i].tv_sec < min.tv_sec && accessTable->elements[i].tv_sec != 0)
                     {
                         min = accessTable->elements[i];
                         removePage = i;
                     }
-                    else if (accessTable->elements[i].tv_sec == min.tv_sec)
+                    else if (accessTable->elements[i].tv_sec == min.tv_sec) //if seconds are equal compare microseconds
                     {
                         if (accessTable->elements[i].tv_usec < min.tv_usec && accessTable->elements[i].tv_sec > 0)
                         {
@@ -113,28 +109,16 @@ void page_fault_handler( struct page_table *pt, int page )
                         }
                     }
                 }
-
-                /* removePage = -1; */
-                /* do */
-                /* { */
-                /*     randFrame = rand() % nframes; */
-                /*     removePage = frameTable->elements[randFrame]; */
-                /* } */
-                /* while (removePage == frameTable->lastUsed); */
             }
             else
             {
-                printf("method is strange. Exiting\n");
+                printf("Method not recognized, please choose rand|fifo|custom. Exiting...\n");
                 exit(1);
             }
-            //   removePage = frameTable->elements[randFrame];
 
-            //removeFrame;
-            //removeBits;
             page_table_get_entry(pt, removePage, &removeFrame, &removeBits);
-            //chosenPage = algorithm();
 
-            int i = 0;
+            int i = 0; //this for loop updates the page/frame tracker with the new page
             for (; i < nframes; i++)
                 if (frameTable->elements[i] == removePage)
                     frameTable->elements[i] = page;
@@ -144,33 +128,27 @@ void page_fault_handler( struct page_table *pt, int page )
             disk_read(gDisk, page, &phys[removeFrame * PAGE_SIZE]);
             reads++;
             page_table_set_entry(pt, page, removeFrame, PROT_READ);
-            /* frameTable->lastUsed = page; */
+
             struct timeval tv;
             gettimeofday(&tv,NULL);
-            accessTable->elements[page] = tv;
+            accessTable->elements[page] = tv; //set the new pages timestamp
             page_table_set_entry(pt, removePage, 0, 0);
-            accessTable->elements[removePage].tv_sec = 0;
+            accessTable->elements[removePage].tv_sec = 0; //reset this pages timestamp to a value so we can ignore it
         }
     }
     else //PROT_READ is set now set PROT_WRITE
     {
-        page_table_set_entry(pt, page, frame, PROT_READ|PROT_WRITE);
+        page_table_set_entry(pt, page, frame, PROT_READ|PROT_WRITE); //set the new perms
         struct timeval tv;
         gettimeofday(&tv,NULL);
-        accessTable->elements[page] = tv;
-        if (accessTable->elements[page].tv_usec + 10000 > tenMult)
+        accessTable->elements[page] = tv; //get the time for our custom alg
+        if (accessTable->elements[page].tv_usec + 10000 > tenMult) //this if handles the wacky stuff we had to do for the timestamps
         {
-            accessTable->elements[page].tv_sec += 1;
+            accessTable->elements[page].tv_sec += 1; //give a priority boost to files that have been recently written to
             accessTable->elements[page].tv_usec = (accessTable->elements[page].tv_usec + 10000) - tenMult;
         }
         else
             accessTable->elements[page].tv_usec += 10000;
-        /* frameTable->lastUsed = page; */
-        //accessTable->elements[page] = (int)time(NULL);
-        /* char *phys = page_table_get_physmem(pt); */
-        /* int nframes = page_table_get_nframes(pt); */
-        /* disk_read(gDisk, page, &phys[frame * nframes]); */
-
     }
 
     /* int i = 0; */
@@ -187,26 +165,22 @@ void page_fault_handler( struct page_table *pt, int page )
     /* printf("\n"); */
     /* /1* printf("page fault on page #%d\n",page); *1/ */
     /* page_table_print(pt); */
-    //exit(1);
 }
 
 int main( int argc, char *argv[] )
 {
     if(argc!=5) {
-        printf("use: virtmem <npages> <nframes> <rand|fifo|lru|custom> <sort|scan|focus>\n");
+        printf("use: virtmem <npages> <nframes> <rand|fifo|custom> <sort|scan|focus>\n");
         return 1;
     }
 
+    //ERROR CHECKING ON THESE!
     int npages = atoi(argv[1]);
     int nframes = atoi(argv[2]);
     const char *program = argv[4];
 
     frameTable = malloc(sizeof(struct table) + nframes * sizeof(int));
     accessTable = malloc(sizeof(struct table) + npages * sizeof(struct timeval));
-
-    /* int i = 0; */
-    /* for (; i < npages; i++) */
-    /*     accessTable->elements[i] = 0; */
 
     frameTable->currFree = 0;
     frameTable->oldest = 0;
