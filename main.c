@@ -150,21 +150,6 @@ void page_fault_handler( struct page_table *pt, int page )
         else
             accessTable->elements[page].tv_usec += 10000;
     }
-
-    /* int i = 0; */
-    /* for (; i < page_table_get_npages(pt); i++) */
-    /* { */
-    /*     printf("page: %d - timestamp: %d\n", i, accessTable->elements[i].tv_sec); */
-    /* } */
-
-    /* printf("pages in mem are: \n"); */
-    /* i = 0; */
-    /* int nframes = page_table_get_nframes(pt); */
-    /* for (; i < nframes; i++) */
-    /*     printf("%d - ", frameTable->elements[i]); */
-    /* printf("\n"); */
-    /* /1* printf("page fault on page #%d\n",page); *1/ */
-    /* page_table_print(pt); */
 }
 
 int main( int argc, char *argv[] )
@@ -174,9 +159,25 @@ int main( int argc, char *argv[] )
         return 1;
     }
 
-    //ERROR CHECKING ON THESE!
     int npages = atoi(argv[1]);
+    if (npages <= 0 || npages > 10000) 
+    {
+        printf("Bad npages input\n");
+        exit(1);
+    }
     int nframes = atoi(argv[2]);
+    
+    if (nframes <= 0 || nframes > 10000) 
+    {
+        printf("Bad nframes input\n");
+        exit(1);
+    }
+
+    if (nframes > npages) 
+    {
+        printf("nframes cannot be greater than npages\n");
+        exit(1);
+    }
     const char *program = argv[4];
 
     frameTable = malloc(sizeof(struct table) + nframes * sizeof(int));
@@ -205,7 +206,7 @@ int main( int argc, char *argv[] )
 
     char *virtmem = page_table_get_virtmem(pt);
 
-    char *physmem = page_table_get_physmem(pt);
+    //char *physmem = page_table_get_physmem(pt);
 
     if(!strcmp(program,"sort")) {
         sort_program(virtmem,npages*PAGE_SIZE);
@@ -225,5 +226,19 @@ int main( int argc, char *argv[] )
     disk_close(disk);
     free(frameTable);
     printf("faults: %d, reads: %d, writes: %d\n", faults, reads, writes);
+  
     return 0;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
